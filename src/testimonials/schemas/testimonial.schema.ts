@@ -2,7 +2,17 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import type { HydratedDocument } from 'mongoose';
 
 export type TestimonialDocument = HydratedDocument<Testimonial>;
-export type TestimonialPlacement = 'homepage' | 'testimonials';
+export const TESTIMONIAL_PLACEMENTS = ['homepage', 'slides', 'testimonials'] as const;
+export type TestimonialPlacement = (typeof TESTIMONIAL_PLACEMENTS)[number];
+export const TESTIMONIAL_CATEGORIES = [
+  'gut',
+  'liver',
+  'weight-metabolic',
+  'skin',
+  'hormones-thyroid',
+  'mood-focus',
+] as const;
+export type TestimonialCategory = (typeof TESTIMONIAL_CATEGORIES)[number];
 export type TestimonialStatus = 'draft' | 'published' | 'archived';
 
 @Schema({ timestamps: true, collection: 'testimonials' })
@@ -24,10 +34,17 @@ export class Testimonial {
   @Prop({
     type: [String],
     required: true,
-    enum: ['homepage', 'testimonials'],
+    enum: [...TESTIMONIAL_PLACEMENTS],
     default: ['testimonials'],
   })
   placements: TestimonialPlacement[];
+
+  @Prop({
+    type: [String],
+    enum: [...TESTIMONIAL_CATEGORIES],
+    default: [],
+  })
+  categories: TestimonialCategory[];
 
   @Prop({
     type: String,
@@ -47,4 +64,4 @@ export class Testimonial {
 
 export const TestimonialSchema = SchemaFactory.createForClass(Testimonial);
 
-TestimonialSchema.index({ status: 1, placements: 1, sortOrder: 1, createdAt: -1 });
+TestimonialSchema.index({ status: 1, placements: 1, categories: 1, sortOrder: 1, createdAt: -1 });

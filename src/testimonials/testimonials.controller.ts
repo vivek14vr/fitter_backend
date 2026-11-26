@@ -27,12 +27,24 @@ import { DeleteTestimonialUploadDto } from './dto/delete-testimonial-upload.dto.
 import { UpdateTestimonialDto } from './dto/update-testimonial.dto.js';
 import { TestimonialStorageService } from './testimonial-storage.service.js';
 import { TestimonialsService } from './testimonials.service.js';
-import type { TestimonialPlacement } from './schemas/testimonial.schema.js';
+import {
+  TESTIMONIAL_CATEGORIES,
+  TESTIMONIAL_PLACEMENTS,
+  type TestimonialCategory,
+  type TestimonialPlacement,
+} from './schemas/testimonial.schema.js';
 
 function parsePlacement(value?: string): TestimonialPlacement {
   const placement = value?.trim().toLowerCase() || 'testimonials';
-  if (placement === 'homepage' || placement === 'testimonials') return placement;
+  if ((TESTIMONIAL_PLACEMENTS as readonly string[]).includes(placement)) return placement as TestimonialPlacement;
   throw new BadRequestException('Unsupported testimonial placement');
+}
+
+function parseCategory(value?: string): TestimonialCategory | undefined {
+  const category = value?.trim().toLowerCase();
+  if (!category) return undefined;
+  if ((TESTIMONIAL_CATEGORIES as readonly string[]).includes(category)) return category as TestimonialCategory;
+  throw new BadRequestException('Unsupported testimonial category');
 }
 
 @Controller('testimonials')
@@ -40,8 +52,8 @@ export class TestimonialsController {
   constructor(private readonly testimonialsService: TestimonialsService) {}
 
   @Get()
-  list(@Query('placement') placementValue?: string) {
-    return this.testimonialsService.listPublic(parsePlacement(placementValue));
+  list(@Query('placement') placementValue?: string, @Query('category') categoryValue?: string) {
+    return this.testimonialsService.listPublic(parsePlacement(placementValue), parseCategory(categoryValue));
   }
 }
 

@@ -7,6 +7,7 @@ import { UpdateTestimonialDto } from './dto/update-testimonial.dto.js';
 import {
   Testimonial,
   type TestimonialDocument,
+  type TestimonialCategory,
   type TestimonialPlacement,
 } from './schemas/testimonial.schema.js';
 import { TestimonialStorageService } from './testimonial-storage.service.js';
@@ -30,6 +31,16 @@ function normalizePlacements(placements: TestimonialPlacement[]) {
   return unique;
 }
 
+function normalizeCategories(categories?: TestimonialCategory[]) {
+  return [...new Set(categories ?? [])];
+}
+
+function validatePlacementCategories(placements: TestimonialPlacement[], categories: TestimonialCategory[]) {
+  if (placements.includes('slides') && !categories.length) {
+    throw new BadRequestException('Choose at least one category for programme slides');
+  }
+}
+
 @Injectable()
 export class TestimonialsService {
   private readonly logger = new Logger(TestimonialsService.name);
@@ -40,9 +51,11 @@ export class TestimonialsService {
     private readonly storageService: TestimonialStorageService,
   ) {}
 
-  async listPublic(placement: TestimonialPlacement) {
+  async listPublic(placement: TestimonialPlacement, category?: TestimonialCategory) {
+    const filter: Record<string, unknown> = { status: 'published', placements: placement };
+    if (category) filter.categories = category;
     const testimonials = await this.testimonialModel
-      .find({ status: 'published', placements: placement })
+      .find(filter)
       .sort({ sortOrder: 1, createdAt: -1 })
       .lean()
       .exec();
@@ -59,6 +72,9 @@ export class TestimonialsService {
   }
 
   async create(dto: CreateTestimonialDto) {
+    const placements = normalizePlacements(dto.placements);
+    const categories = normalizeCategories(dto.categories);
+    validatePlacementCategories(placements, categories);
     const requestedObjectKey = dto.objectKey?.trim() || undefined;
     const promotedObject = requestedObjectKey
       ? await this.storageService.promoteObject(requestedObjectKey)
@@ -72,7 +88,8 @@ export class TestimonialsService {
         altText: dto.altText.trim(),
         imageUrl,
         objectKey,
-        placements: normalizePlacements(dto.placements),
+        placements,
+        categories,
         status: dto.status ?? 'draft',
         sortOrder: dto.sortOrder,
       });
@@ -85,9 +102,13 @@ export class TestimonialsService {
 
   async update(id: string, dto: UpdateTestimonialDto) {
     const testimonial = await this.findById(id);
-    if (dto.placements && !dto.placements.length) {
-      throw new BadRequestException('Choose at least one display section');
-    }
+    const nextPlacements = dto.placements === undefined
+      ? testimonial.placements
+      : normalizePlacements(dto.placements);
+    const nextCategories = dto.categories === undefined
+      ? (testimonial.categories ?? [])
+      : normalizeCategories(dto.categories);
+    validatePlacementCategories(nextPlacements, nextCategories);
 
     const previousObjectKey = testimonial.objectKey;
     const requestedObjectKey = dto.objectKey === undefined
@@ -103,7 +124,8 @@ export class TestimonialsService {
     if (promotedObject) testimonial.imageUrl = promotedObject.publicUrl;
     else if (dto.imageUrl !== undefined) testimonial.imageUrl = normalizeImageUrl(dto.imageUrl);
     if (dto.objectKey !== undefined) testimonial.objectKey = nextObjectKey;
-    if (dto.placements !== undefined) testimonial.placements = normalizePlacements(dto.placements);
+    if (dto.placements !== undefined) testimonial.placements = nextPlacements;
+    if (dto.categories !== undefined) testimonial.categories = nextCategories;
     if (dto.status !== undefined) testimonial.status = dto.status;
     if (dto.sortOrder !== undefined) testimonial.sortOrder = dto.sortOrder;
     try {
@@ -161,7 +183,7 @@ export class TestimonialsService {
     }
   }
 
-  private present(testimonial: Pick<TestimonialDocument, '_id' | 'title' | 'altText' | 'imageUrl' | 'objectKey' | 'placements' | 'status' | 'sortOrder' | 'createdAt' | 'updatedAt'>) {
+  private present(testimonial: Pick<TestimonialDocument, '_id' | 'title' | 'altText' | 'imageUrl' | 'objectKey' | 'placements' | 'categories' | 'status' | 'sortOrder' | 'createdAt' | 'updatedAt'>) {
     return {
       id: testimonial._id.toString(),
       title: testimonial.title,
@@ -169,6 +191,7 @@ export class TestimonialsService {
       imageUrl: testimonial.imageUrl,
       objectKey: testimonial.objectKey ?? null,
       placements: testimonial.placements,
+      categories: testimonial.categories ?? [],
       status: testimonial.status,
       sortOrder: testimonial.sortOrder,
       createdAt: testimonial.createdAt ?? null,

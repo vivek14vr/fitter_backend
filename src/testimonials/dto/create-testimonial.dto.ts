@@ -12,9 +12,16 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
-import type { TestimonialPlacement, TestimonialStatus } from '../schemas/testimonial.schema.js';
+import {
+  TESTIMONIAL_CATEGORIES,
+  TESTIMONIAL_PLACEMENTS,
+  type TestimonialCategory,
+  type TestimonialPlacement,
+  type TestimonialStatus,
+} from '../schemas/testimonial.schema.js';
 
-const placements: TestimonialPlacement[] = ['homepage', 'testimonials'];
+const placements: TestimonialPlacement[] = [...TESTIMONIAL_PLACEMENTS];
+const categories: TestimonialCategory[] = [...TESTIMONIAL_CATEGORIES];
 const statuses: TestimonialStatus[] = ['draft', 'published', 'archived'];
 
 export class CreateTestimonialDto {
@@ -43,9 +50,15 @@ export class CreateTestimonialDto {
 
   @IsArray()
   @ArrayMinSize(1)
-  @ArrayMaxSize(2)
+  @ArrayMaxSize(placements.length)
   @IsIn(placements, { each: true })
   placements: TestimonialPlacement[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(categories.length)
+  @IsIn(categories, { each: true })
+  categories?: TestimonialCategory[];
 
   @IsOptional()
   @IsIn(statuses)

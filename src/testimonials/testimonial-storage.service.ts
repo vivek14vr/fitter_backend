@@ -158,21 +158,23 @@ export class TestimonialStorageService {
   }
 
   async resolveImageUrl(objectKey: string | null | undefined, fallbackUrl: string) {
-    if (!objectKey || !this.isConfigured()) return fallbackUrl;
+    if (!this.isConfigured()) return fallbackUrl;
 
     const bucket = envValue('AWS_S3_BUCKET');
     const region = envValue('AWS_REGION');
+    const resolvedObjectKey = objectKey?.trim() || this.objectKeyFromFallbackUrl(fallbackUrl, bucket, region);
+    if (!resolvedObjectKey) return fallbackUrl;
     const publicBaseUrl = envValue('AWS_S3_PUBLIC_BASE_URL');
 
     if (publicBaseUrl && !this.isDirectS3Origin(publicBaseUrl)) {
-      return this.publicUrl(bucket, region, objectKey);
+      return this.publicUrl(bucket, region, resolvedObjectKey);
     }
 
     try {
-      this.assertManagedObjectKey(objectKey);
+      this.assertManagedObjectKey(resolvedObjectKey);
       return await getSignedUrl(
         this.getClient(),
-        new GetObjectCommand({ Bucket: bucket, Key: objectKey }),
+        new GetObjectCommand({ Bucket: bucket, Key: resolvedObjectKey }),
         { expiresIn: READ_URL_TTL_SECONDS },
       );
     } catch (error) {
@@ -217,6 +219,36 @@ export class TestimonialStorageService {
     } catch {
       return false;
     }
+  }
+
+  private objectKeyFromFallbackUrl(value: string, bucket: string, region: string) {
+    try {
+      const parsed = new URL(value);
+      const hostname = parsed.hostname.toLowerCase();
+      const normalizedBucket = bucket.toLowerCase();
+      const normalizedRegion = region.toLowerCase();
+      const virtualHostedOrigins = new Set([
+        `${normalizedBucket}.s3.amazonaws.com`,
+        `${normalizedBucket}.s3.${normalizedRegion}.amazonaws.com`,
+        `${normalizedBucket}.s3-${normalizedRegion}.amazonaws.com`,
+      ]);
+      const pathStyleOrigins = new Set([
+        's3.amazonaws.com',
+        `s3.${normalizedRegion}.amazonaws.com`,
+        `s3-${normalizedRegion}.amazonaws.com`,
+      ]);
+
+      let pathname = decodeURIComponent(parsed.pathname).replace(/^\/+/, '');
+      if (virtualHostedOrigins.has(hostname)) return pathname;
+      if (pathStyleOrigins.has(hostname) && pathname.startsWith(`${bucket}/`)) {
+        pathname = pathname.slice(bucket.length + 1);
+        return pathname;
+      }
+    } catch {
+      return undefined;
+    }
+
+    return undefined;
   }
 
   private assertManagedObjectKey(objectKey: string) {

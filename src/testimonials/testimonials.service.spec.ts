@@ -105,4 +105,21 @@ describe('TestimonialStorageService upload signing', () => {
 
     expect(imageUrl).toContain('X-Amz-Signature');
   });
+
+  it('signs legacy direct S3 fallback URLs when the record has no object key', async () => {
+    process.env.AWS_REGION = 'ap-south-1';
+    process.env.AWS_S3_BUCKET = 'example-bucket';
+    process.env.AWS_ACCESS_KEY_ID = 'test-access-key';
+    process.env.AWS_SECRET_ACCESS_KEY = 'test-secret-key';
+    delete process.env.AWS_S3_PUBLIC_BASE_URL;
+
+    const storage = new TestimonialStorageService();
+    const imageUrl = await storage.resolveImageUrl(
+      null,
+      'https://example-bucket.s3.ap-south-1.amazonaws.com/testimonials/legacy-story.webp',
+    );
+
+    expect(imageUrl).toContain('X-Amz-Signature');
+    expect(new URL(imageUrl).pathname).toBe('/testimonials/legacy-story.webp');
+  });
 });

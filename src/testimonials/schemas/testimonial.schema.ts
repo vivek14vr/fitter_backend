@@ -64,4 +64,8 @@ export class Testimonial {
 
 export const TestimonialSchema = SchemaFactory.createForClass(Testimonial);
 
-TestimonialSchema.index({ status: 1, placements: 1, categories: 1, sortOrder: 1, createdAt: -1 });
+// MongoDB cannot build a compound multikey index over two array fields.
+// Keep placement and category filtering in separate indexes instead of
+// combining the two arrays into one invalid index.
+TestimonialSchema.index({ status: 1, placements: 1, sortOrder: 1, createdAt: -1 });
+TestimonialSchema.index({ status: 1, categories: 1, sortOrder: 1, createdAt: -1 });

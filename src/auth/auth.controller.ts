@@ -98,7 +98,10 @@ export class AuthController {
   private setRefreshCookie(response: Response, refreshToken: string) {
     response.cookie(REFRESH_COOKIE, refreshToken, {
       httpOnly: true,
-      sameSite: 'lax',
+      // The production frontend and API are hosted on different sites
+      // (Amplify and the backend host), so the refresh cookie must be sent
+      // with credentialed cross-site requests. Localhost remains same-site.
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       secure: process.env.NODE_ENV === 'production',
       maxAge: REFRESH_COOKIE_MAX_AGE,
       path: '/auth',

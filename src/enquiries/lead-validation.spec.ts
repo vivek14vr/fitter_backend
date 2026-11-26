@@ -20,7 +20,7 @@ describe('lead validation', () => {
       source: 'one-to-one-booking-popup',
       completedStep: 1,
       country: 'India',
-      region: 'india',
+      countryCode: '+91',
       ...contact,
     }, true)).not.toThrow();
   });
@@ -46,22 +46,24 @@ describe('lead validation', () => {
     } as Lead)).toThrow(BadRequestException);
   });
 
-  it('uses an explicit region rather than matching country substrings', () => {
+  it('treats every selected non-Indian code as worldwide', () => {
     expect(phoneLooksIndian('+44 20 1234 5678')).toBe(false);
     expect(resolveLeadRegion({
       source: 'one-to-one-booking-popup',
       region: 'worldwide',
       country: 'Not India',
+      countryCode: '+44',
       ...contact,
       phone: '+44 20 1234 5678',
     } as Lead)).toBe('worldwide');
   });
 
-  it('uses an Indian phone country code as a pricing cross-check', () => {
+  it('uses the selected Indian country code for the India price', () => {
     expect(resolveLeadRegion({
       source: 'one-to-one-booking-popup',
       region: 'worldwide',
       country: 'United Kingdom',
+      countryCode: '+91',
       ...contact,
     } as Lead)).toBe('india');
   });

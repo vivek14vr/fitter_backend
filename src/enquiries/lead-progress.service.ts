@@ -36,6 +36,7 @@ import {
 const OPAQUE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{32,160}$/;
 
 type PaymentWebhookPayload = {
+  event?: string;
   payload?: {
     payment?: { entity?: { id?: string; order_id?: string; status?: string } };
     order?: { entity?: { id?: string; status?: string } };
@@ -67,6 +68,7 @@ function normalizeLeadFields(dto: SaveLeadDto) {
     ...(dto.goal !== undefined ? { goal: dto.goal.trim() } : {}),
     ...(dto.timeline !== undefined ? { timeline: dto.timeline.trim() } : {}),
     ...(dto.country !== undefined ? { country: dto.country.trim() } : {}),
+    ...(dto.countryCode !== undefined ? { countryCode: dto.countryCode } : {}),
     ...(dto.region !== undefined ? { region: dto.region } : {}),
     ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
     ...(dto.email !== undefined ? { email: dto.email.trim().toLowerCase() } : {}),
@@ -104,18 +106,18 @@ function getPaymentAmountInPaise() {
 
 function getBookingLink(region: 'india' | 'worldwide') {
   const configured = region === 'india'
-    ? process.env.CALENDLY_LINK_INDIA?.trim()
-      || process.env.CALENDLY_LINK_WORLDWIDE?.trim()
-      || process.env.BOOKING_LINK_INDIA?.trim()
-      || process.env.BOOKING_LINK_WORLDWIDE?.trim()
-    : process.env.CALENDLY_LINK_WORLDWIDE?.trim() || process.env.BOOKING_LINK_WORLDWIDE?.trim();
+    ? process.env.BOOKING_LINK_INDIA?.trim()
+    : process.env.BOOKING_LINK_WORLDWIDE?.trim();
 
   if (!configured) return undefined;
 
   try {
     const parsed = new URL(configured);
     if (parsed.protocol !== 'https:') throw new Error('Booking link must use HTTPS');
-    return parsed.toString();
+    // Return the configured value unchanged after validation. Cal.com treats
+    // query strings and fragments as meaningful, so do not append or rewrite
+    // anything here.
+    return configured;
   } catch {
     throw new ServiceUnavailableException('Scheduling link is not configured correctly');
   }
@@ -187,6 +189,12 @@ export class LeadProgressService {
     if (dto.source !== lead.source) {
       throw new BadRequestException('Lead source cannot be changed');
     }
+    if (lead.submittedAt || lead.paymentStatus === 'paid') {
+      if (dto.completedStep !== lead.completedStep) {
+        throw new BadRequestException('This lead has already been submitted and cannot be changed');
+      }
+      return this.presentProgress(lead);
+    }
     const previousStep = lead.completedStep ?? 0;
     if (lead.source === 'one-to-one-booking-popup' && dto.completedStep !== 1) {
       throw new BadRequestException('A direct consultation booking has one contact step');
@@ -254,8 +262,12 @@ export class LeadProgressService {
     if (lead.paymentStatus === 'paid') {
       return {
         paid: true,
-        bookingLink: lead.bookingLink ?? getBookingLink('india'),
+        bookingLink: getBookingLink('india'),
       };
+    }
+
+    if (!getBookingLink('india')) {
+      throw new ServiceUnavailableException('India scheduling link is not configured yet');
     }
 
     const amount = getPaymentAmountInPaise();
@@ -336,45 +348,77 @@ export class LeadProgressService {
       throw new BadRequestException('Webhook body is not valid JSON');
     }
 
+    if (payload.event && payload.event !== eventType) {
+      throw new BadRequestException('Webhook event type does not match its payload');
+    }
+
     const payment = payload.payload?.payment?.entity;
     const order = payload.payload?.order?.entity;
     const orderId = payment?.order_id ?? order?.id;
     const paymentId = payment?.id;
 
-    try {
-      await this.webhookEventModel.create({
-        providerEventId: eventId,
-        eventType,
-        payloadHash,
-        razorpayOrderId: orderId,
-        razorpayPaymentId: paymentId,
-      });
-    } catch (error) {
-      if (isDuplicateKeyError(error)) return { duplicate: true };
-      throw error;
-    }
+    const existingEvent = await this.webhookEventModel.findOne({ providerEventId: eventId }).lean().exec();
+    if (existingEvent) return { duplicate: true };
 
-    if (!orderId) return { processed: true };
+    if (!orderId) {
+      await this.recordWebhookEvent(eventId, eventType, payloadHash, orderId, paymentId);
+      return { processed: true };
+    }
     const lead = await this.leadModel.findOne({ razorpayOrderId: orderId }).exec();
     if (!lead) {
       this.logger.warn(JSON.stringify({ event: 'razorpay.webhook.lead_not_found', eventType, orderId }));
+      await this.recordWebhookEvent(eventId, eventType, payloadHash, orderId, paymentId);
       return { processed: true };
     }
 
     if ((eventType === 'payment.captured' || eventType === 'order.paid') && paymentId) {
       await this.markPaymentPaid(lead, paymentId);
     } else if (eventType === 'payment.failed') {
-      lead.paymentStatus = 'failed';
-      lead.status = 'payment_failed';
-      await lead.save();
-      await this.enquiryModel.updateOne(
-        { leadId: lead._id.toString() },
-        { $set: { paymentStatus: 'failed' } },
-      ).exec();
-      this.log('lead.payment_failed', lead);
+      const isStaleFailure = lead.paymentStatus === 'paid'
+        || Boolean(lead.razorpayPaymentId && paymentId && lead.razorpayPaymentId !== paymentId);
+      if (!isStaleFailure) {
+        lead.paymentStatus = 'failed';
+        lead.status = 'payment_failed';
+        await lead.save();
+        await this.enquiryModel.updateOne(
+          { leadId: lead._id.toString() },
+          { $set: { paymentStatus: 'failed' } },
+        ).exec();
+        this.log('lead.payment_failed', lead);
+      } else {
+        this.logger.warn(JSON.stringify({
+          event: 'razorpay.webhook.payment_failed_ignored',
+          leadId: lead._id.toString(),
+          orderId,
+          paymentId,
+          paymentStatus: lead.paymentStatus,
+        }));
+      }
     }
 
+    await this.recordWebhookEvent(eventId, eventType, payloadHash, orderId, paymentId);
+
     return { processed: true };
+  }
+
+  private async recordWebhookEvent(
+    providerEventId: string,
+    eventType: string,
+    payloadHash: string,
+    razorpayOrderId?: string,
+    razorpayPaymentId?: string,
+  ) {
+    try {
+      await this.webhookEventModel.create({
+        providerEventId,
+        eventType,
+        payloadHash,
+        razorpayOrderId,
+        razorpayPaymentId,
+      });
+    } catch (error) {
+      if (!isDuplicateKeyError(error)) throw error;
+    }
   }
 
   async updateFollowUp(leadId: string, followUpStatus: LeadFollowUpStatus) {
@@ -405,6 +449,7 @@ export class LeadProgressService {
             goal: lead.goal,
             timeline: lead.timeline,
             country: lead.country ?? (region === 'india' ? 'India' : 'International'),
+            countryCode: lead.countryCode,
             name: lead.name,
             email: lead.email,
             phone: lead.phone,
@@ -441,6 +486,18 @@ export class LeadProgressService {
       if (lead.razorpayPaymentId && lead.razorpayPaymentId !== paymentId) {
         throw new ConflictException('This consultation already has a different payment');
       }
+      await this.enquiryModel.updateOne(
+        { leadId: lead._id.toString() },
+        {
+          $set: {
+            paymentStatus: 'paid',
+            razorpayOrderId: lead.razorpayOrderId,
+            razorpayPaymentId: lead.razorpayPaymentId ?? paymentId,
+            paymentPaidAt: lead.paymentPaidAt ?? new Date(),
+            bookingLinkReleasedAt: lead.bookingLinkReleasedAt ?? new Date(),
+          },
+        },
+      ).exec();
       return this.presentFinalization(lead, lead.consultationId);
     }
 
@@ -500,14 +557,20 @@ export class LeadProgressService {
   private presentFinalization(lead: LeadDocument, consultationId: string): PaymentResult {
     const region = lead.region ?? resolveLeadRegion(lead);
     const paymentStatus = asPaymentStatus(lead.paymentStatus, region);
+    const canReleaseBookingLink = lead.source === 'one-to-one-booking-popup'
+      && (region === 'worldwide' || paymentStatus === 'paid');
+    const bookingLink = canReleaseBookingLink ? getBookingLink(region) : undefined;
+    const paymentConfigured = lead.source !== 'one-to-one-booking-popup'
+      || region !== 'india'
+      || (this.razorpayService.isCheckoutConfigured() && Boolean(getBookingLink('india')));
     return {
       leadId: lead._id.toString(),
       consultationId,
       region,
       paymentRequired: lead.source === 'one-to-one-booking-popup' && region === 'india' && paymentStatus !== 'paid',
-      paymentConfigured: lead.source !== 'one-to-one-booking-popup' || region !== 'india' || this.razorpayService.isCheckoutConfigured(),
+      paymentConfigured,
       paymentStatus,
-      bookingLink: lead.bookingLink,
+      bookingLink,
     };
   }
 

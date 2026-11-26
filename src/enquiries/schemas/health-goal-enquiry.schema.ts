@@ -20,6 +20,9 @@ export class HealthGoalEnquiry {
   @Prop({ type: String, required: true, trim: true, maxlength: 80 })
   country: string;
 
+  @Prop({ type: String, trim: true, maxlength: 5 })
+  countryCode?: string;
+
   @Prop({ type: String, required: true, trim: true, maxlength: 100 })
   name: string;
 

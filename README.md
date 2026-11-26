@@ -123,3 +123,29 @@ Nest is an MIT-licensed open source project. It can grow thanks to the sponsors 
 
 Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
 # fitter_backend
+
+## Razorpay 1:1 payments
+
+The public 1:1 scheduling flow creates a server-side Razorpay order only for
+leads that selected the India country code (`+91`). The amount defaults to
+`INDIA_CONSULTATION_AMOUNT_INR=1500`. After Checkout returns, the backend
+verifies `razorpay_order_id`, `razorpay_payment_id` and `razorpay_signature`
+before releasing the India scheduling link. International country codes skip
+payment and receive their scheduling link after the contact form is saved.
+
+Add these values to the backend environment (never to the frontend):
+
+```dotenv
+RAZORPAY_KEY_ID=rzp_test_...
+RAZORPAY_KEY_SECRET=...
+RAZORPAY_WEBHOOK_SECRET=...
+BOOKING_LINK_INDIA=https://cal.com/deeptisherawat/1-on-1-health-consultation
+BOOKING_LINK_WORLDWIDE=https://cal.com/deeptisherawat/1-on-1-health-consultation
+INDIA_CONSULTATION_AMOUNT_INR=1500
+```
+
+In Razorpay Test Mode, configure the webhook URL as
+`https://<your-backend-host>/webhooks/razorpay` and subscribe to
+`payment.captured`, `payment.failed`, and `order.paid`. The webhook secret is
+separate from the API key secret. Keep the endpoint on HTTPS in staging or
+production; localhost cannot receive Razorpay webhooks directly.

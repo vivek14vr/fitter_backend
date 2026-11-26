@@ -51,6 +51,13 @@ export class SaveLeadDto {
   country?: string;
 
   @IsOptional()
+  @IsString()
+  @Matches(/^\+[1-9]\d{0,3}$/, {
+    message: 'Country code must start with + and contain up to four digits',
+  })
+  countryCode?: string;
+
+  @IsOptional()
   @IsIn(['india', 'worldwide'])
   region?: 'india' | 'worldwide';
 

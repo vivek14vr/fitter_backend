@@ -46,6 +46,9 @@ export class Lead {
   @Prop({ type: String, trim: true, maxlength: 80 })
   country?: string;
 
+  @Prop({ type: String, trim: true, maxlength: 5 })
+  countryCode?: string;
+
   @Prop({ type: String, trim: true, maxlength: 100 })
   name?: string;
 
@@ -125,3 +128,4 @@ LeadSchema.index({ createdAt: -1 });
 LeadSchema.index({ email: 1, createdAt: -1 });
 LeadSchema.index({ status: 1, createdAt: -1 });
 LeadSchema.index({ followUpStatus: 1, createdAt: -1 });
+LeadSchema.index({ leadType: 1, createdAt: -1 });

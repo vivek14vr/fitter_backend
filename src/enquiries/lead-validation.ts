@@ -4,7 +4,7 @@ import type { Lead } from './schemas/lead.schema.js';
 
 type LeadAnswerState = Pick<
   Lead,
-  'source' | 'name' | 'email' | 'phone' | 'consent' | 'concerns' | 'goal' | 'timeline' | 'country' | 'region'
+  'source' | 'name' | 'email' | 'phone' | 'consent' | 'concerns' | 'goal' | 'timeline' | 'country' | 'countryCode' | 'region'
 >;
 
 function hasText(value: string | undefined, minimumLength: number) {
@@ -31,6 +31,7 @@ export function validateLeadStep(dto: SaveLeadDto, isCreate = false) {
     if (dto.completedStep !== 1) {
       throw new BadRequestException('A direct consultation booking has one contact step');
     }
+    if (!dto.countryCode) missing.push('country code');
     if (missing.length) {
       throw new BadRequestException(`Complete the required fields for this step: ${missing.join(', ')}`);
     }
@@ -56,6 +57,7 @@ export function ensureLeadIsComplete(lead: LeadAnswerState) {
   if (!hasText(lead.phone, 7)) missing.push('phone');
   if (lead.consent !== true) missing.push('consent');
   if (lead.source === 'one-to-one-booking-popup') {
+    if (!lead.countryCode) missing.push('country code');
     if (missing.length) {
       throw new BadRequestException(`Lead is incomplete: ${missing.join(', ')}`);
     }
@@ -72,13 +74,16 @@ export function ensureLeadIsComplete(lead: LeadAnswerState) {
   }
 }
 
-/** Phone country code is a cross-check, not a sole pricing decision. */
+/** Retained for legacy records created before a selected country code was saved. */
 export function phoneLooksIndian(phone: string | undefined) {
   const digits = phone?.replace(/\D/g, '') ?? '';
   return digits.startsWith('91') && digits.length >= 12;
 }
 
 export function resolveLeadRegion(lead: LeadAnswerState): 'india' | 'worldwide' {
+  if (lead.countryCode) {
+    return lead.countryCode === '+91' ? 'india' : 'worldwide';
+  }
   if (lead.region === 'india' || phoneLooksIndian(lead.phone)) {
     return 'india';
   }

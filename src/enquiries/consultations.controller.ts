@@ -46,7 +46,6 @@ export class ConsultationsController {
       : 'worldwide';
     const bookingLink = region === 'worldwide'
       ? process.env.BOOKING_LINK_WORLDWIDE?.trim()
-        || 'https://cal.com/deeptisherawat/1-on-1-health-consultation-international'
       : undefined;
     const paymentStatus = region === 'india' ? 'pending' : 'not_required';
     const paymentAmountInr = region === 'india'

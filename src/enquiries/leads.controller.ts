@@ -35,6 +35,8 @@ import {
   type LeadStatus,
 } from './schemas/lead.schema.js';
 
+type LeadType = 'health_checkin' | 'consultation_booking';
+
 function escapeRegex(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -130,6 +132,7 @@ export class AdminLeadsController {
     @Query('search') searchValue?: string,
     @Query('status') statusValue?: string,
     @Query('followUpStatus') followUpStatusValue?: string,
+    @Query('leadType') leadTypeValue?: string,
     @Query('page') pageValue?: string,
     @Query('limit') limitValue?: string,
   ) {
@@ -159,18 +162,31 @@ export class AdminLeadsController {
       throw new BadRequestException('Unsupported follow-up status');
     }
 
+    const leadType = leadTypeValue?.trim().toLowerCase();
+    const validLeadTypes: LeadType[] = ['health_checkin', 'consultation_booking'];
+    if (leadType && !validLeadTypes.includes(leadType as LeadType)) {
+      throw new BadRequestException('Unsupported lead type');
+    }
+
     const filter: Record<string, unknown> = {};
     if (status) filter.status = status;
     if (followUpStatus) filter.followUpStatus = followUpStatus;
+    const andFilters: Record<string, unknown>[] = [];
+    if (leadType === 'consultation_booking') {
+      andFilters.push({ $or: [{ leadType }, { source: 'one-to-one-booking-popup' }] });
+    } else if (leadType === 'health_checkin') {
+      andFilters.push({ source: { $ne: 'one-to-one-booking-popup' } });
+    }
     if (search) {
       const querySearch = escapeRegex(search);
-      filter.$or = [
+      andFilters.push({ $or: [
         { name: { $regex: querySearch, $options: 'i' } },
         { email: { $regex: querySearch, $options: 'i' } },
         { phone: { $regex: querySearch, $options: 'i' } },
         { country: { $regex: querySearch, $options: 'i' } },
-      ];
+      ] });
     }
+    if (andFilters.length) filter.$and = andFilters;
 
     const [leads, total] = await Promise.all([
       this.leadModel.find(filter)
@@ -188,13 +204,14 @@ export class AdminLeadsController {
       action: 'lead.listed',
       targetType: 'lead',
       targetId: 'collection',
-      metadata: { page, limit, status: status ?? null, followUpStatus: followUpStatus ?? null, hasSearch: Boolean(search) },
+      metadata: { page, limit, status: status ?? null, followUpStatus: followUpStatus ?? null, leadType: leadType ?? null, hasSearch: Boolean(search) },
     });
 
     return {
       leads: leads.map((lead) => ({
         id: lead._id.toString(),
         source: lead.source,
+        leadType: lead.source === 'one-to-one-booking-popup' ? 'consultation_booking' : lead.leadType,
         name: lead.name ?? null,
         email: lead.email ?? null,
         phone: lead.phone ?? null,
@@ -202,6 +219,7 @@ export class AdminLeadsController {
         goal: lead.goal ?? null,
         timeline: lead.timeline ?? null,
         country: lead.country ?? null,
+        countryCode: lead.countryCode ?? null,
         region: lead.region ?? null,
         consent: lead.consent ?? false,
         consentedAt: lead.consentedAt ?? null,

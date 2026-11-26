@@ -12,6 +12,8 @@ type RazorpayOrderResponse = {
   receipt?: string;
 };
 
+const RAZORPAY_REQUEST_TIMEOUT_MS = 12_000;
+
 export type RazorpayCheckoutOrder = {
   id: string;
   amount: number;
@@ -54,6 +56,7 @@ export class RazorpayService {
     try {
       response = await fetch('https://api.razorpay.com/v1/orders', {
         method: 'POST',
+        signal: AbortSignal.timeout(RAZORPAY_REQUEST_TIMEOUT_MS),
         headers: {
           Authorization: `Basic ${authorization}`,
           'Content-Type': 'application/json',

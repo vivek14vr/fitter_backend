@@ -5,6 +5,7 @@ import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { AuthModule } from './auth/auth.module.js';
 import { EnquiriesModule } from './enquiries/enquiries.module.js';
+import { TestimonialsModule } from './testimonials/testimonials.module.js';
 
 function mongoUri() {
   const configuredUri = process.env.MONGODB_URI?.trim();
@@ -19,6 +20,7 @@ function mongoUri() {
     MongooseModule.forRoot(mongoUri()),
     AuthModule,
     EnquiriesModule,
+    TestimonialsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

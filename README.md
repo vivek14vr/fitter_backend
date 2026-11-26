@@ -149,3 +149,43 @@ In Razorpay Test Mode, configure the webhook URL as
 `payment.captured`, `payment.failed`, and `order.paid`. The webhook secret is
 separate from the API key secret. Keep the endpoint on HTTPS in staging or
 production; localhost cannot receive Razorpay webhooks directly.
+
+## Testimonial image storage
+
+Testimonials are managed from the admin workspace at `/admin/testimonials`.
+The API stores testimonial metadata in MongoDB and returns a short-lived,
+server-signed S3 `PUT` URL for the browser to upload the image directly. Image
+bytes and AWS secret keys never pass through the frontend or MongoDB.
+
+Configure the following on the backend before enabling the upload control:
+
+```dotenv
+AWS_REGION=ap-south-1
+AWS_S3_BUCKET=your-public-testimonial-bucket
+AWS_S3_PUBLIC_BASE_URL=https://your-cdn-or-bucket-host
+AWS_S3_TESTIMONIAL_PREFIX=testimonials
+```
+
+The backend can use its deployment's IAM role. If static credentials are used
+instead, set both `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`; never expose
+either value to the frontend. The bucket or CDN must serve uploaded objects
+with the appropriate `Content-Type`, and its CORS policy must allow `PUT` from
+the deployed frontend origin (for local development, `http://localhost:3000`).
+If the bucket stays private, set `AWS_S3_PUBLIC_BASE_URL` to a browser-readable
+CloudFront image origin (for example, a distribution using signed cookies); the
+default bucket URL assumes public reads.
+
+An S3 CORS rule for the upload origin can be as small as:
+
+```json
+[{"AllowedOrigins":["https://your-frontend.example"],"AllowedMethods":["PUT"],"AllowedHeaders":["*"]}]
+```
+
+The admin chooses `Homepage`, `Testimonials page`, or both for each item and
+sets its status and display order. Only `published` items are returned by the
+public endpoints:
+
+```text
+GET /testimonials?placement=homepage
+GET /testimonials?placement=testimonials
+```

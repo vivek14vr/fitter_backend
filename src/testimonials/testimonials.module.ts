@@ -5,6 +5,7 @@ import { AuditLog, AuditLogSchema } from '../auth/schemas/audit-log.schema.js';
 import { AuthSession, AuthSessionSchema } from '../auth/schemas/auth-session.schema.js';
 import { User, UserSchema } from '../auth/schemas/user.schema.js';
 import { Testimonial, TestimonialSchema } from './schemas/testimonial.schema.js';
+import { TestimonialIndexMaintenanceService } from './testimonial-index-maintenance.service.js';
 import { TestimonialStorageService } from './testimonial-storage.service.js';
 import { AdminTestimonialsController, TestimonialsController } from './testimonials.controller.js';
 import { TestimonialsService } from './testimonials.service.js';
@@ -22,6 +23,6 @@ import { TestimonialsService } from './testimonials.service.js';
     AuthModule,
   ],
   controllers: [TestimonialsController, AdminTestimonialsController],
-  providers: [TestimonialsService, TestimonialStorageService],
+  providers: [TestimonialsService, TestimonialStorageService, TestimonialIndexMaintenanceService],
 })
 export class TestimonialsModule {}

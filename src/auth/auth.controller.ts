@@ -21,6 +21,21 @@ import { RateLimitGuard } from '../common/rate-limit.guard.js';
 const REFRESH_COOKIE = 'deepti_refresh_token';
 const REFRESH_COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 
+function usesCrossSiteCookie() {
+  const configuredSameSite = process.env.AUTH_COOKIE_SAMESITE?.trim().toLowerCase();
+  if (configuredSameSite === 'none') return true;
+  if (configuredSameSite === 'lax') return false;
+  if (process.env.NODE_ENV === 'production') return true;
+
+  return (process.env.FRONTEND_URL ?? '').split(',').some((origin) => {
+    try {
+      return new URL(origin.trim()).protocol === 'https:';
+    } catch {
+      return false;
+    }
+  });
+}
+
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
@@ -96,13 +111,14 @@ export class AuthController {
   }
 
   private setRefreshCookie(response: Response, refreshToken: string) {
+    const crossSite = usesCrossSiteCookie();
     response.cookie(REFRESH_COOKIE, refreshToken, {
       httpOnly: true,
       // The production frontend and API are hosted on different sites
       // (Amplify and the backend host), so the refresh cookie must be sent
       // with credentialed cross-site requests. Localhost remains same-site.
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      sameSite: crossSite ? 'none' : 'lax',
+      secure: crossSite,
       maxAge: REFRESH_COOKIE_MAX_AGE,
       path: '/auth',
     });

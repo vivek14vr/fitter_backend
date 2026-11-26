@@ -114,6 +114,13 @@ export class AdminTestimonialsController {
     return { testimonial };
   }
 
+  @Delete(':id/permanent')
+  async remove(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    const testimonial = await this.testimonialsService.remove(id);
+    await this.recordAudit(request, 'testimonial.deleted', 'testimonial', testimonial.id);
+    return { testimonial };
+  }
+
   private async recordAudit(
     request: AuthenticatedRequest,
     action: string,

@@ -59,7 +59,12 @@ export class TestimonialsService {
       .sort({ sortOrder: 1, createdAt: -1 })
       .lean()
       .exec();
-    return { testimonials: testimonials.map((testimonial) => this.present(testimonial)) };
+    return {
+      testimonials: await Promise.all(testimonials.map(async (testimonial) => this.present(
+        testimonial,
+        await this.storageService.resolveImageUrl(testimonial.objectKey, testimonial.imageUrl),
+      ))),
+    };
   }
 
   async listAdmin() {
@@ -68,7 +73,12 @@ export class TestimonialsService {
       .sort({ status: 1, sortOrder: 1, createdAt: -1 })
       .lean()
       .exec();
-    return { testimonials: testimonials.map((testimonial) => this.present(testimonial)) };
+    return {
+      testimonials: await Promise.all(testimonials.map(async (testimonial) => this.present(
+        testimonial,
+        await this.storageService.resolveImageUrl(testimonial.objectKey, testimonial.imageUrl),
+      ))),
+    };
   }
 
   async create(dto: CreateTestimonialDto) {
@@ -151,6 +161,14 @@ export class TestimonialsService {
     return this.present(testimonial);
   }
 
+  async remove(id: string) {
+    const testimonial = await this.findById(id);
+    const objectKey = testimonial.objectKey;
+    await this.testimonialModel.deleteOne({ _id: testimonial._id }).exec();
+    if (objectKey) await this.cleanupObjectIfUnreferenced(objectKey);
+    return this.present(testimonial);
+  }
+
   async discardUpload(objectKey: string) {
     const normalizedObjectKey = objectKey.trim();
     if (!normalizedObjectKey) throw new BadRequestException('Invalid testimonial storage object key');
@@ -183,12 +201,15 @@ export class TestimonialsService {
     }
   }
 
-  private present(testimonial: Pick<TestimonialDocument, '_id' | 'title' | 'altText' | 'imageUrl' | 'objectKey' | 'placements' | 'categories' | 'status' | 'sortOrder' | 'createdAt' | 'updatedAt'>) {
+  private present(
+    testimonial: Pick<TestimonialDocument, '_id' | 'title' | 'altText' | 'imageUrl' | 'objectKey' | 'placements' | 'categories' | 'status' | 'sortOrder' | 'createdAt' | 'updatedAt'>,
+    imageUrl = testimonial.imageUrl,
+  ) {
     return {
       id: testimonial._id.toString(),
       title: testimonial.title,
       altText: testimonial.altText,
-      imageUrl: testimonial.imageUrl,
+      imageUrl,
       objectKey: testimonial.objectKey ?? null,
       placements: testimonial.placements,
       categories: testimonial.categories ?? [],

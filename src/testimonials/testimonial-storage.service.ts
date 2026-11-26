@@ -7,6 +7,7 @@ import {
 import {
   CopyObjectCommand,
   DeleteObjectCommand,
+  GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
   S3Client,
@@ -20,6 +21,7 @@ import {
 } from './dto/create-testimonial-upload.dto.js';
 
 const UPLOAD_URL_TTL_SECONDS = 15 * 60;
+const READ_URL_TTL_SECONDS = 60 * 60;
 const extensionByType: Record<(typeof TESTIMONIAL_IMAGE_TYPES)[number], string> = {
   'image/jpeg': 'jpg',
   'image/png': 'png',
@@ -155,6 +157,33 @@ export class TestimonialStorageService {
     }
   }
 
+  async resolveImageUrl(objectKey: string | null | undefined, fallbackUrl: string) {
+    if (!objectKey || !this.isConfigured()) return fallbackUrl;
+
+    const bucket = envValue('AWS_S3_BUCKET');
+    const region = envValue('AWS_REGION');
+    const publicBaseUrl = envValue('AWS_S3_PUBLIC_BASE_URL');
+
+    if (publicBaseUrl && !this.isDirectS3Origin(publicBaseUrl)) {
+      return this.publicUrl(bucket, region, objectKey);
+    }
+
+    try {
+      this.assertManagedObjectKey(objectKey);
+      return await getSignedUrl(
+        this.getClient(),
+        new GetObjectCommand({ Bucket: bucket, Key: objectKey }),
+        { expiresIn: READ_URL_TTL_SECONDS },
+      );
+    } catch (error) {
+      this.logger.warn(JSON.stringify({
+        event: 'testimonial.storage.read_url_failed',
+        errorType: error instanceof Error ? error.constructor.name : 'UnknownError',
+      }));
+      return fallbackUrl;
+    }
+  }
+
   private getClient() {
     if (!this.client) {
       const accessKeyId = envValue('AWS_ACCESS_KEY_ID');
@@ -174,6 +203,20 @@ export class TestimonialStorageService {
       || `https://${bucket}.s3.${region}.amazonaws.com`;
     const encodedKey = objectKey.split('/').map((part) => encodeURIComponent(part)).join('/');
     return `${baseUrl.replace(/\/+$/, '')}/${encodedKey}`;
+  }
+
+  private isDirectS3Origin(value: string) {
+    try {
+      const hostname = new URL(value).hostname.toLowerCase();
+      return hostname === 's3.amazonaws.com'
+        || hostname.startsWith('s3.')
+        || hostname.startsWith('s3-')
+        || hostname.endsWith('.s3.amazonaws.com')
+        || hostname.includes('.s3.')
+        || hostname.includes('.s3-');
+    } catch {
+      return false;
+    }
   }
 
   private assertManagedObjectKey(objectKey: string) {

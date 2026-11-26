@@ -58,8 +58,8 @@ export class CreateHealthGoalEnquiryDto {
   email: string;
 
   @IsString()
-  @Matches(/^[0-9+()\-\s]{7,25}$/, {
-    message: 'Phone number must include only digits and common phone symbols',
+  @Matches(/^(?=.*\d)[0-9+()\-\s]{7,25}$/, {
+    message: 'Phone number must include at least one digit and only common phone symbols',
   })
   phone: string;
 

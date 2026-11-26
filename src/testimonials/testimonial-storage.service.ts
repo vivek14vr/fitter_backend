@@ -1,8 +1,23 @@
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import {
+  CopyObjectCommand,
+  DeleteObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+  S3Client,
+  type HeadObjectCommandOutput,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'node:crypto';
-import { TESTIMONIAL_IMAGE_TYPES } from './dto/create-testimonial-upload.dto.js';
+import {
+  MAX_TESTIMONIAL_IMAGE_SIZE,
+  TESTIMONIAL_IMAGE_TYPES,
+} from './dto/create-testimonial-upload.dto.js';
 
 const UPLOAD_URL_TTL_SECONDS = 15 * 60;
 const extensionByType: Record<(typeof TESTIMONIAL_IMAGE_TYPES)[number], string> = {
@@ -18,6 +33,7 @@ function envValue(name: string) {
 
 @Injectable()
 export class TestimonialStorageService {
+  private readonly logger = new Logger(TestimonialStorageService.name);
   private client: S3Client | null = null;
 
   isConfigured() {
@@ -38,11 +54,13 @@ export class TestimonialStorageService {
     const bucket = envValue('AWS_S3_BUCKET');
     const region = envValue('AWS_REGION');
     const prefix = envValue('AWS_S3_TESTIMONIAL_PREFIX') || 'testimonials';
-    const objectKey = `${prefix.replace(/^\/+|\/+$/g, '')}/${randomUUID()}.${extensionByType[input.contentType]}`;
+    const normalizedPrefix = prefix.replace(/^\/+|\/+$/g, '');
+    const objectKey = `${normalizedPrefix}/pending/${randomUUID()}.${extensionByType[input.contentType]}`;
     const command = new PutObjectCommand({
       Bucket: bucket,
       Key: objectKey,
       ContentType: input.contentType,
+      ContentLength: input.fileSize,
       CacheControl: 'public,max-age=31536000,immutable',
     });
     const uploadUrl = await getSignedUrl(this.getClient(), command, {
@@ -56,6 +74,85 @@ export class TestimonialStorageService {
       expiresIn: UPLOAD_URL_TTL_SECONDS,
       contentType: input.contentType,
     };
+  }
+
+  async promoteObject(objectKey: string) {
+    if (!this.isConfigured()) {
+      throw new ServiceUnavailableException('S3 image storage is not configured yet');
+    }
+
+    const bucket = envValue('AWS_S3_BUCKET');
+    const region = envValue('AWS_REGION');
+    const prefix = (envValue('AWS_S3_TESTIMONIAL_PREFIX') || 'testimonials').replace(/^\/+|\/+$/g, '');
+    const pendingPrefix = `${prefix}/pending/`;
+    const verified = await this.verifyUploadedImage(objectKey);
+
+    if (!objectKey.startsWith(pendingPrefix)) {
+      return {
+        objectKey,
+        publicUrl: this.publicUrl(bucket, region, objectKey),
+      };
+    }
+
+    const finalObjectKey = `${prefix}/${objectKey.slice(pendingPrefix.length)}`;
+    await this.getClient().send(new CopyObjectCommand({
+      Bucket: bucket,
+      Key: finalObjectKey,
+      CopySource: `${bucket}/${objectKey.split('/').map((part) => encodeURIComponent(part)).join('/')}`,
+      MetadataDirective: 'REPLACE',
+      ContentType: verified.contentType,
+      CacheControl: 'public,max-age=31536000,immutable',
+    }));
+    await this.deleteObject(objectKey);
+
+    return {
+      objectKey: finalObjectKey,
+      publicUrl: this.publicUrl(bucket, region, finalObjectKey),
+    };
+  }
+
+  async verifyUploadedImage(objectKey: string) {
+    if (!this.isConfigured()) {
+      throw new ServiceUnavailableException('S3 image storage is not configured yet');
+    }
+
+    const bucket = envValue('AWS_S3_BUCKET');
+    this.assertManagedObjectKey(objectKey);
+
+    let head: HeadObjectCommandOutput;
+    try {
+      head = await this.getClient().send(new HeadObjectCommand({ Bucket: bucket, Key: objectKey }));
+    } catch {
+      throw new BadRequestException('Uploaded testimonial image could not be found in storage');
+    }
+
+    const contentLength = head.ContentLength ?? 0;
+    if (!Number.isInteger(contentLength) || contentLength < 1 || contentLength > MAX_TESTIMONIAL_IMAGE_SIZE) {
+      throw new BadRequestException('Uploaded testimonial image exceeds the 10 MB limit');
+    }
+
+    const contentType = head.ContentType?.split(';', 1)[0]?.trim().toLowerCase();
+    if (!contentType || !TESTIMONIAL_IMAGE_TYPES.includes(contentType as (typeof TESTIMONIAL_IMAGE_TYPES)[number])) {
+      throw new BadRequestException('Uploaded testimonial image has an unsupported content type');
+    }
+
+    return { contentLength, contentType };
+  }
+
+  async deleteObject(objectKey: string) {
+    if (!this.isConfigured()) return;
+    try {
+      this.assertManagedObjectKey(objectKey);
+      await this.getClient().send(new DeleteObjectCommand({
+        Bucket: envValue('AWS_S3_BUCKET'),
+        Key: objectKey,
+      }));
+    } catch (error) {
+      this.logger.warn(JSON.stringify({
+        event: 'testimonial.storage.delete_failed',
+        errorType: error instanceof Error ? error.constructor.name : 'UnknownError',
+      }));
+    }
   }
 
   private getClient() {
@@ -77,5 +174,13 @@ export class TestimonialStorageService {
       || `https://${bucket}.s3.${region}.amazonaws.com`;
     const encodedKey = objectKey.split('/').map((part) => encodeURIComponent(part)).join('/');
     return `${baseUrl.replace(/\/+$/, '')}/${encodedKey}`;
+  }
+
+  private assertManagedObjectKey(objectKey: string) {
+    const prefix = envValue('AWS_S3_TESTIMONIAL_PREFIX') || 'testimonials';
+    const managedPrefix = `${prefix.replace(/^\/+|\/+$/g, '')}/`;
+    if (!objectKey.startsWith(managedPrefix) || objectKey.length <= managedPrefix.length) {
+      throw new BadRequestException('Invalid testimonial storage object key');
+    }
   }
 }

@@ -3,8 +3,10 @@ import {
   Controller,
   HttpCode,
   HttpStatus,
+  Header,
   Logger,
   Post,
+  ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -18,6 +20,29 @@ import {
 } from './schemas/health-goal-enquiry.schema.js';
 
 type ConsultationRegion = 'india' | 'worldwide';
+
+function getWorldwideBookingLink() {
+  const configured = process.env.BOOKING_LINK_WORLDWIDE?.trim();
+  if (!configured) {
+    throw new ServiceUnavailableException('Scheduling link is not configured correctly');
+  }
+
+  try {
+    const parsed = new URL(configured);
+    if (parsed.protocol !== 'https:') throw new Error('Scheduling link must use HTTPS');
+    return configured;
+  } catch {
+    throw new ServiceUnavailableException('Scheduling link is not configured correctly');
+  }
+}
+
+function getIndiaConsultationAmount() {
+  const amount = Number(process.env.INDIA_CONSULTATION_AMOUNT_INR ?? 1500);
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 100_000) {
+    throw new ServiceUnavailableException('India consultation amount is not configured correctly');
+  }
+  return amount;
+}
 
 function isIndia(country: string, phone: string): boolean {
   const countryValue = country.trim().toLowerCase();
@@ -37,6 +62,7 @@ export class ConsultationsController {
   ) {}
 
   @Post()
+  @Header('Deprecation', 'true')
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(RateLimitGuard)
   @RateLimit(5, 60_000)
@@ -44,13 +70,9 @@ export class ConsultationsController {
     const region: ConsultationRegion = dto.region === 'india' || isIndia(dto.country, dto.phone)
       ? 'india'
       : 'worldwide';
-    const bookingLink = region === 'worldwide'
-      ? process.env.BOOKING_LINK_WORLDWIDE?.trim()
-      : undefined;
+    const bookingLink = region === 'worldwide' ? getWorldwideBookingLink() : undefined;
     const paymentStatus = region === 'india' ? 'pending' : 'not_required';
-    const paymentAmountInr = region === 'india'
-      ? Number(process.env.INDIA_CONSULTATION_AMOUNT_INR ?? 1500)
-      : undefined;
+    const paymentAmountInr = region === 'india' ? getIndiaConsultationAmount() : undefined;
 
     const enquiry = await this.enquiryModel.create({
       concerns: [...new Set(dto.concerns)],
@@ -63,7 +85,7 @@ export class ConsultationsController {
       consent: true,
       consentedAt: new Date(),
       source: dto.source,
-      privacyVersion: '2026-11-26',
+      privacyVersion: process.env.PRIVACY_POLICY_VERSION?.trim() || '2026-11-26',
       status: 'new',
       region,
       paymentStatus,

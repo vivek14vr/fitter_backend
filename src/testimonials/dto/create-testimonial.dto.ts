@@ -21,11 +21,13 @@ export class CreateTestimonialDto {
   @IsString()
   @MinLength(2)
   @MaxLength(160)
+  @Matches(/\S/, { message: 'Title must contain non-whitespace characters' })
   title: string;
 
   @IsString()
   @MinLength(5)
   @MaxLength(300)
+  @Matches(/\S/, { message: 'Alt text must contain non-whitespace characters' })
   altText: string;
 
   @IsString()

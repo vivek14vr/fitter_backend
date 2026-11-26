@@ -7,6 +7,8 @@ export const TESTIMONIAL_IMAGE_TYPES = [
   'image/avif',
 ] as const;
 
+export const MAX_TESTIMONIAL_IMAGE_SIZE = 10 * 1024 * 1024;
+
 export class CreateTestimonialUploadDto {
   @IsString()
   @MinLength(1)
@@ -19,6 +21,6 @@ export class CreateTestimonialUploadDto {
 
   @IsInt()
   @Min(1)
-  @Max(10 * 1024 * 1024)
+  @Max(MAX_TESTIMONIAL_IMAGE_SIZE)
   fileSize: number;
 }

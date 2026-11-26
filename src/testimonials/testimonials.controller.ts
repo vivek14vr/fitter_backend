@@ -23,6 +23,7 @@ import { AuditLog, type AuditLogDocument } from '../auth/schemas/audit-log.schem
 import { UserRole } from '../auth/user-role.enum.js';
 import { CreateTestimonialDto } from './dto/create-testimonial.dto.js';
 import { CreateTestimonialUploadDto } from './dto/create-testimonial-upload.dto.js';
+import { DeleteTestimonialUploadDto } from './dto/delete-testimonial-upload.dto.js';
 import { UpdateTestimonialDto } from './dto/update-testimonial.dto.js';
 import { TestimonialStorageService } from './testimonial-storage.service.js';
 import { TestimonialsService } from './testimonials.service.js';
@@ -66,6 +67,13 @@ export class AdminTestimonialsController {
     const upload = await this.storageService.createUpload(dto);
     await this.recordAudit(request, 'testimonial.upload_url_created', 'storage', upload.objectKey);
     return upload;
+  }
+
+  @Delete('upload')
+  async discardUpload(@Body() dto: DeleteTestimonialUploadDto, @Req() request: AuthenticatedRequest) {
+    const result = await this.testimonialsService.discardUpload(dto.objectKey);
+    await this.recordAudit(request, 'testimonial.upload_discarded', 'storage', dto.objectKey.trim());
+    return result;
   }
 
   @Post()

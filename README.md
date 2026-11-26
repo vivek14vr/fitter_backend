@@ -138,7 +138,7 @@ Add these values to the backend environment (never to the frontend):
 ```dotenv
 RAZORPAY_KEY_ID=rzp_test_...
 RAZORPAY_KEY_SECRET=...
-RAZORPAY_WEBHOOK_SECRET=...
+RAZORPAY_WEBHOOK_SECRET="..."
 BOOKING_LINK_INDIA=https://cal.com/deeptisherawat/1-on-1-health-consultation
 BOOKING_LINK_WORLDWIDE=https://cal.com/deeptisherawat/1-on-1-health-consultation
 INDIA_CONSULTATION_AMOUNT_INR=1500
@@ -180,6 +180,11 @@ An S3 CORS rule for the upload origin can be as small as:
 ```json
 [{"AllowedOrigins":["https://your-frontend.example"],"AllowedMethods":["PUT"],"AllowedHeaders":["*"]}]
 ```
+
+New uploads are written under `${AWS_S3_TESTIMONIAL_PREFIX}/pending/` and are
+copied to the permanent prefix only after the testimonial metadata is saved.
+Configure an S3 lifecycle rule to expire objects under that `pending/` prefix
+after one day so abandoned browser uploads do not accumulate.
 
 The admin chooses `Homepage`, `Testimonials page`, or both for each item and
 sets its status and display order. Only `published` items are returned by the

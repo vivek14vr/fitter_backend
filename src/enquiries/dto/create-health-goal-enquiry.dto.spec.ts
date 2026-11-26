@@ -29,4 +29,13 @@ describe('CreateHealthGoalEnquiryDto', () => {
     const errors = await validate(dto);
     expect(errors.map((error) => error.property)).toEqual(expect.arrayContaining(['concerns', 'consent']));
   });
+
+  it('rejects a phone value that contains no digits', async () => {
+    const dto = plainToInstance(CreateHealthGoalEnquiryDto, {
+      ...validPayload,
+      phone: '-------',
+    });
+    const errors = await validate(dto);
+    expect(errors.map((error) => error.property)).toContain('phone');
+  });
 });

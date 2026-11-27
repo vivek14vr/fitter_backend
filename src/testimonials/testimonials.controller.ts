@@ -26,7 +26,11 @@ import { CreateTestimonialUploadDto } from './dto/create-testimonial-upload.dto.
 import { DeleteTestimonialUploadDto } from './dto/delete-testimonial-upload.dto.js';
 import { UpdateTestimonialDto } from './dto/update-testimonial.dto.js';
 import { TestimonialStorageService } from './testimonial-storage.service.js';
-import { TestimonialsService } from './testimonials.service.js';
+import {
+  DEFAULT_PUBLIC_TESTIMONIAL_LIMIT,
+  MAX_PUBLIC_TESTIMONIAL_LIMIT,
+  TestimonialsService,
+} from './testimonials.service.js';
 import {
   TESTIMONIAL_CATEGORIES,
   TESTIMONIAL_PLACEMENTS,
@@ -34,15 +38,42 @@ import {
   type TestimonialPlacement,
 } from './schemas/testimonial.schema.js';
 
-function parsePlacement(value?: string): TestimonialPlacement {
-  const placement = value?.trim().toLowerCase() || 'testimonials';
-  if ((TESTIMONIAL_PLACEMENTS as readonly string[]).includes(placement)) return placement as TestimonialPlacement;
-  throw new BadRequestException('Unsupported testimonial placement');
+function parsePlacements(value: unknown): TestimonialPlacement[] {
+  const values = Array.isArray(value) ? value : value === undefined ? [] : [value];
+  if (!values.every((entry): entry is string => typeof entry === 'string')) {
+    throw new BadRequestException('Unsupported testimonial placement');
+  }
+  const requested = values
+    .flatMap((entry) => entry.split(','))
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
+  const placements = [...new Set(requested)];
+  if (!placements.length) return ['testimonials'];
+  if (placements.some((placement) => !(TESTIMONIAL_PLACEMENTS as readonly string[]).includes(placement))) {
+    throw new BadRequestException('Unsupported testimonial placement');
+  }
+  return placements as TestimonialPlacement[];
 }
 
-function parseCategory(value?: string): TestimonialCategory | undefined {
+function parseLimit(value: unknown) {
+  if (value !== undefined && typeof value !== 'string') {
+    throw new BadRequestException('Provide one testimonial limit');
+  }
+  if (!value?.trim()) return DEFAULT_PUBLIC_TESTIMONIAL_LIMIT;
+  const limit = Number(value);
+  if (!Number.isInteger(limit) || limit < 1) {
+    throw new BadRequestException('Testimonial limit must be a positive integer');
+  }
+  return Math.min(limit, MAX_PUBLIC_TESTIMONIAL_LIMIT);
+}
+
+function parseCategory(value: unknown): TestimonialCategory | 'general' | undefined {
+  if (value !== undefined && typeof value !== 'string') {
+    throw new BadRequestException('Provide one testimonial category');
+  }
   const category = value?.trim().toLowerCase();
   if (!category) return undefined;
+  if (category === 'general') return category;
   if ((TESTIMONIAL_CATEGORIES as readonly string[]).includes(category)) return category as TestimonialCategory;
   throw new BadRequestException('Unsupported testimonial category');
 }
@@ -52,8 +83,16 @@ export class TestimonialsController {
   constructor(private readonly testimonialsService: TestimonialsService) {}
 
   @Get()
-  list(@Query('placement') placementValue?: string, @Query('category') categoryValue?: string) {
-    return this.testimonialsService.listPublic(parsePlacement(placementValue), parseCategory(categoryValue));
+  list(
+    @Query('placement') placementValue?: unknown,
+    @Query('category') categoryValue?: unknown,
+    @Query('limit') limitValue?: unknown,
+  ) {
+    return this.testimonialsService.listPublic(
+      parsePlacements(placementValue),
+      parseCategory(categoryValue),
+      parseLimit(limitValue),
+    );
   }
 }
 

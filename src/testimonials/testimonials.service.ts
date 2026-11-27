@@ -12,6 +12,9 @@ import {
 } from './schemas/testimonial.schema.js';
 import { TestimonialStorageService } from './testimonial-storage.service.js';
 
+export const DEFAULT_PUBLIC_TESTIMONIAL_LIMIT = 24;
+export const MAX_PUBLIC_TESTIMONIAL_LIMIT = 24;
+
 function normalizeImageUrl(value: string) {
   const imageUrl = value.trim();
   if (/^\/(?!\/)/.test(imageUrl)) return imageUrl;
@@ -51,12 +54,22 @@ export class TestimonialsService {
     private readonly storageService: TestimonialStorageService,
   ) {}
 
-  async listPublic(placement: TestimonialPlacement, category?: TestimonialCategory) {
-    const filter: Record<string, unknown> = { status: 'published', placements: placement };
-    if (category) filter.categories = category;
+  async listPublic(
+    placements: readonly TestimonialPlacement[],
+    category?: TestimonialCategory | 'general',
+    limit = DEFAULT_PUBLIC_TESTIMONIAL_LIMIT,
+  ) {
+    const safeLimit = Math.min(Math.max(Math.trunc(limit), 1), MAX_PUBLIC_TESTIMONIAL_LIMIT);
+    const filter: Record<string, unknown> = {
+      status: 'published',
+      placements: { $in: [...placements] },
+    };
+    if (category === 'general') filter['categories.0'] = { $exists: false };
+    else if (category) filter.categories = category;
     const testimonials = await this.testimonialModel
       .find(filter)
       .sort({ sortOrder: 1, createdAt: -1 })
+      .limit(safeLimit)
       .lean()
       .exec();
     return {

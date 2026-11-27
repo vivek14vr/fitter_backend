@@ -56,6 +56,59 @@ describe('TestimonialsService upload cleanup', () => {
   });
 });
 
+describe('TestimonialsService public listing', () => {
+  it('filters by any requested placement and caps the public result size', async () => {
+    const id = '507f1f77bcf86cd799439011';
+    const testimonial = {
+      _id: { toString: () => id },
+      title: 'Story',
+      altText: 'Story image',
+      imageUrl: 'https://stored.example/story.webp',
+      objectKey: 'testimonials/story.webp',
+      placements: ['slides', 'testimonials'],
+      categories: ['gut'],
+      status: 'published',
+      sortOrder: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as unknown as TestimonialDocument;
+    const query = {
+      sort: vi.fn(),
+      limit: vi.fn(),
+      lean: vi.fn(),
+      exec: vi.fn().mockResolvedValue([testimonial]),
+    };
+    query.sort.mockReturnValue(query);
+    query.limit.mockReturnValue(query);
+    query.lean.mockReturnValue(query);
+    const find = vi.fn().mockReturnValue(query);
+    const resolveImageUrl = vi.fn().mockResolvedValue('https://cdn.example/story.webp');
+    const model = { find } as unknown as Model<TestimonialDocument>;
+    const storage = { resolveImageUrl } as unknown as TestimonialStorageService;
+    const service = new TestimonialsService(model, storage);
+
+    await expect(service.listPublic(['slides', 'testimonials'], 'gut', 40)).resolves.toMatchObject({
+      testimonials: [{ id, imageUrl: 'https://cdn.example/story.webp' }],
+    });
+    expect(find).toHaveBeenCalledWith({
+      status: 'published',
+      placements: { $in: ['slides', 'testimonials'] },
+      categories: 'gut',
+    });
+    expect(query.limit).toHaveBeenCalledWith(24);
+    expect(resolveImageUrl).toHaveBeenCalledWith('testimonials/story.webp', 'https://stored.example/story.webp');
+
+    query.exec.mockResolvedValueOnce([]);
+    await service.listPublic(['homepage'], 'general', 4);
+    expect(find).toHaveBeenLastCalledWith({
+      status: 'published',
+      placements: { $in: ['homepage'] },
+      'categories.0': { $exists: false },
+    });
+    expect(query.limit).toHaveBeenLastCalledWith(4);
+  });
+});
+
 describe('TestimonialStorageService upload signing', () => {
   const environment = { ...process.env };
 

@@ -74,11 +74,13 @@ describe('TestimonialsService public listing', () => {
     } as unknown as TestimonialDocument;
     const query = {
       sort: vi.fn(),
+      skip: vi.fn(),
       limit: vi.fn(),
       lean: vi.fn(),
       exec: vi.fn().mockResolvedValue([testimonial]),
     };
     query.sort.mockReturnValue(query);
+    query.skip.mockReturnValue(query);
     query.limit.mockReturnValue(query);
     query.lean.mockReturnValue(query);
     const find = vi.fn().mockReturnValue(query);
@@ -95,17 +97,20 @@ describe('TestimonialsService public listing', () => {
       placements: { $in: ['slides', 'testimonials'] },
       categories: 'gut',
     });
-    expect(query.limit).toHaveBeenCalledWith(24);
+    expect(query.limit).toHaveBeenCalledWith(25);
     expect(resolveImageUrl).toHaveBeenCalledWith('testimonials/story.webp', 'https://stored.example/story.webp');
 
-    query.exec.mockResolvedValueOnce([]);
-    await service.listPublic(['homepage'], 'general', 4);
+    query.exec.mockResolvedValueOnce(Array<TestimonialDocument>(5).fill(testimonial));
+    const page = await service.listPublic(['homepage'], 'general', 4, 8);
     expect(find).toHaveBeenLastCalledWith({
       status: 'published',
       placements: { $in: ['homepage'] },
       'categories.0': { $exists: false },
     });
-    expect(query.limit).toHaveBeenLastCalledWith(4);
+    expect(query.skip).toHaveBeenLastCalledWith(8);
+    expect(query.limit).toHaveBeenLastCalledWith(5);
+    expect(page.nextOffset).toBe(12);
+    expect(page.testimonials).toHaveLength(4);
   });
 });
 

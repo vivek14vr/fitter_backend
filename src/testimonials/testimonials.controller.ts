@@ -78,6 +78,14 @@ function parseCategory(value: unknown): TestimonialCategory | 'general' | undefi
   throw new BadRequestException('Unsupported testimonial category');
 }
 
+function parseOffset(value: unknown): number {
+  if (value === undefined) return 0;
+  if (typeof value !== 'string' || !/^\d+$/.test(value) || !Number.isSafeInteger(Number(value))) {
+    throw new BadRequestException('Testimonial offset must be a non-negative integer');
+  }
+  return Number(value);
+}
+
 @Controller('testimonials')
 export class TestimonialsController {
   constructor(private readonly testimonialsService: TestimonialsService) {}
@@ -87,11 +95,13 @@ export class TestimonialsController {
     @Query('placement') placementValue?: unknown,
     @Query('category') categoryValue?: unknown,
     @Query('limit') limitValue?: unknown,
+    @Query('offset') offsetValue?: unknown,
   ) {
     return this.testimonialsService.listPublic(
       parsePlacements(placementValue),
       parseCategory(categoryValue),
       parseLimit(limitValue),
+      parseOffset(offsetValue),
     );
   }
 }

@@ -58,6 +58,7 @@ export class TestimonialsService {
     placements: readonly TestimonialPlacement[],
     category?: TestimonialCategory | 'general',
     limit = DEFAULT_PUBLIC_TESTIMONIAL_LIMIT,
+    offset = 0,
   ) {
     const safeLimit = Math.min(Math.max(Math.trunc(limit), 1), MAX_PUBLIC_TESTIMONIAL_LIMIT);
     const filter: Record<string, unknown> = {
@@ -68,12 +69,14 @@ export class TestimonialsService {
     else if (category) filter.categories = category;
     const testimonials = await this.testimonialModel
       .find(filter)
-      .sort({ sortOrder: 1, createdAt: -1 })
-      .limit(safeLimit)
+      .sort({ sortOrder: 1, createdAt: -1, _id: -1 })
+      .skip(offset)
+      .limit(safeLimit + 1)
       .lean()
       .exec();
     return {
-      testimonials: await Promise.all(testimonials.map(async (testimonial) => this.present(
+      nextOffset: testimonials.length > safeLimit ? offset + safeLimit : null,
+      testimonials: await Promise.all(testimonials.slice(0, safeLimit).map(async (testimonial) => this.present(
         testimonial,
         await this.storageService.resolveImageUrl(testimonial.objectKey, testimonial.imageUrl),
       ))),

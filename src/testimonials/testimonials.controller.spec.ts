@@ -9,7 +9,7 @@ describe('TestimonialsController public listing', () => {
 
     await controller.list('slides,testimonials', 'gut', '4');
 
-    expect(listPublic).toHaveBeenCalledWith(['slides', 'testimonials'], 'gut', 4);
+    expect(listPublic).toHaveBeenCalledWith(['slides', 'testimonials'], 'gut', 4, 0);
   });
 
   it('rejects unsupported placements', async () => {
@@ -26,7 +26,16 @@ describe('TestimonialsController public listing', () => {
 
     await controller.list('homepage', 'general', '4');
 
-    expect(listPublic).toHaveBeenCalledWith(['homepage'], 'general', 4);
+    expect(listPublic).toHaveBeenCalledWith(['homepage'], 'general', 4, 0);
+  });
+
+  it('accepts a page offset and rejects invalid offsets', async () => {
+    const listPublic = vi.fn().mockResolvedValue({ testimonials: [] });
+    const controller = new TestimonialsController({ listPublic } as unknown as TestimonialsService);
+    await controller.list('slides', 'gut', '24', '24');
+    expect(listPublic).toHaveBeenCalledWith(['slides'], 'gut', 24, 24);
+    expect(() => controller.list('slides', 'gut', '24', '-1')).toThrow(BadRequestException);
+    expect(() => controller.list('slides', 'gut', '24', ['0', '24'])).toThrow(BadRequestException);
   });
 
   it.each([
